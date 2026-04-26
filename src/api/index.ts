@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { passwordEncryptor } from '../utils/passwordEncryptor';
 
 const API_BASE_URL = '/api';
 
@@ -88,7 +87,7 @@ api.interceptors.request.use(config => {
 let refreshCount = 0;
 let lastRefreshTime = 0;
 const MAX_REFRESH_ATTEMPTS = 5;
-const MIN_REFRESH_INTERVAL = 3000;
+const MIN_REFRESH_INTERVAL = 10000;
 
 api.interceptors.response.use(
   response => response,
@@ -128,18 +127,74 @@ async function handleRefresh(originalRequest: any) {
   lastRefreshTime = Date.now();
 
   try {
-    const refreshResponse = await api.post('/auth/refresh');
-    if (refreshResponse.data?.data?.access_token) {
-      localStorage.setItem('access_token', refreshResponse.data.data.access_token);
-      if (originalRequest.headers) {
-        originalRequest.headers.Authorization = `Bearer ${refreshResponse.data.data.access_token}`;
-      }
-      refreshCount = 0;
-      return api(originalRequest);
+    console.log('开始刷新令牌...');
+    console.log('当前 URL:', window.location.href);
+    console.log('API_BASE_URL:', API_BASE_URL);
+
+    // 从 localStorage 中获取 refresh_token
+    const refreshToken = localStorage.getItem('refresh_token');
+    console.log('从 localStorage 获取 refresh_token:', refreshToken);
+
+    if (!refreshToken) {
+      console.error('没有找到 refresh_token');
+      throw new Error('No refresh token found');
     }
-  } catch (refreshError) {
+
+    // 创建一个新的 axios 实例，避免拦截器的影响
+    const refreshApi = axios.create({
+      baseURL: API_BASE_URL,
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // 添加请求拦截器，查看发送的请求头
+    refreshApi.interceptors.request.use(config => {
+      console.log('刷新令牌请求配置:', config);
+      console.log('刷新令牌请求头:', config.headers);
+      return config;
+    });
+
+    console.log('发送刷新令牌请求...');
+    // 手动发送 refresh_token
+    const refreshResponse = await refreshApi.post('/auth/refresh', {
+      refresh_token: refreshToken
+    });
+    console.log('刷新令牌响应:', refreshResponse);
+    console.log('刷新令牌响应数据:', refreshResponse.data);
+
+    // 存储新的 access_token 和 refresh_token
+    if (refreshResponse.data.data?.access_token) {
+      localStorage.setItem('access_token', refreshResponse.data.data.access_token);
+      console.log('更新 access_token 成功');
+    }
+
+    if (refreshResponse.data.data?.refresh_token) {
+      localStorage.setItem('refresh_token', refreshResponse.data.data.refresh_token);
+      console.log('更新 refresh_token 成功');
+    }
+
+    // 更新原请求的 Authorization 头
+    if (refreshResponse.data.data?.access_token && originalRequest.headers) {
+      originalRequest.headers.Authorization = `Bearer ${refreshResponse.data.data.access_token}`;
+    }
+
+    refreshCount = 0;
+    console.log('令牌刷新成功');
+    return api(originalRequest);
+  } catch (refreshError: any) {
+    console.error('刷新令牌错误:', refreshError);
+    console.error('错误响应:', refreshError.response);
+    console.error('错误消息:', refreshError.message);
+    console.error('错误代码:', refreshError.code);
+
+    // 清除本地存储的令牌
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
+    localStorage.removeItem('refresh_token');
+
+    // 跳转到登录页面
     window.location.href = '/login';
     return Promise.reject(refreshError);
   }
@@ -153,13 +208,30 @@ export const login = async (data: LoginRequest): Promise<LoginResponse> => {
   if (isSQLInjection(sanitizedAccount)) {
     throw new Error('账号包含非法字符');
   }
-  console.log(data);
+  console.log('登录请求数据:', data);
 
   const response = await api.post('/auth/login', {
     account: sanitizedAccount,
     password: data.password,
     encryption: data.encryption || 'RSA-OAEP'
   });
+
+  // 打印完整响应
+  console.log('登录完整响应:', response);
+  // 打印响应数据
+  console.log('登录响应数据:', response.data);
+
+  // 存储返回的 access_token 和 refresh_token
+  if (response.data.data?.access_token) {
+    localStorage.setItem('access_token', response.data.data.access_token);
+    console.log('存储 access_token 成功');
+  }
+
+  if (response.data.data?.refresh_token) {
+    localStorage.setItem('refresh_token', response.data.data.refresh_token);
+    console.log('存储 refresh_token 成功');
+  }
+
   return response.data;
 };
 
@@ -195,14 +267,32 @@ export const register = async (data: RegisterRequest): Promise<ApiResponse> => {
   return response.data;
 };
 
-export const getPublicKey = async (): Promise<string> => {
+export const getPublicKey = async (): Promise<ApiResponse<{ publicKey: string }>> => {
   const response = await api.get('/auth/public-key');
   return response.data;
 };
 
 export const logout = async (): Promise<ApiResponse> => {
-  const response = await api.post('/auth/logout');
-  return response.data;
+  try {
+    const response = await api.post('/auth/logout');
+
+    // 清除本地存储的令牌和用户信息
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('refresh_token');
+    console.log('登出成功，清除本地存储');
+
+    return response.data;
+  } catch (error) {
+    console.error('登出失败:', error);
+
+    // 即使接口调用失败，也要清除本地存储
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('refresh_token');
+
+    throw error;
+  }
 };
 
 export default api;

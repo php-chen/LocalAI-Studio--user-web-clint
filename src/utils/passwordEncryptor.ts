@@ -71,15 +71,11 @@ class PasswordEncryptor {
       throw new Error('Public key not set');
     }
 
-    console.log('开始RSA加密');
-    console.log('原始密码:', password);
-    console.log('密码长度:', password.length);
+
 
     const parsedKey = this.parsePublicKey(this.publicKey);
-    console.log('解析后的公钥长度:', parsedKey.length);
 
     const publicKeyDER = this.base64ToArrayBuffer(parsedKey);
-    console.log('公钥DER长度:', publicKeyDER.byteLength);
 
     try {
       console.log('开始导入公钥');
@@ -93,10 +89,8 @@ class PasswordEncryptor {
         false,
         ['encrypt']
       );
-      console.log('公钥导入成功');
 
       const passwordBytes = new TextEncoder().encode(password);
-      console.log('密码字节长度:', passwordBytes.length);
 
       // 检查密码长度是否超过RSA-OAEP的最大长度
       // 对于2048位RSA密钥，最大明文长度是190字节
@@ -104,7 +98,6 @@ class PasswordEncryptor {
         throw new Error('Password too long for RSA-OAEP encryption');
       }
 
-      console.log('开始加密');
       const encrypted = await this.crypto.encrypt(
         {
           name: 'RSA-OAEP',
@@ -113,10 +106,8 @@ class PasswordEncryptor {
         publicKey,
         passwordBytes
       );
-      console.log('加密成功，加密数据长度:', encrypted.byteLength);
 
       const result = this.arrayBufferToBase64(encrypted);
-      console.log('加密结果长度:', result.length);
       return result;
     } catch (error) {
       console.error('RSA encryption error:', error);
@@ -169,6 +160,10 @@ class PasswordEncryptor {
 
   hasPublicKey(): boolean {
     return this.publicKey !== null;
+  }
+
+  setPublicKey(key: string): void {
+    this.publicKey = key;
   }
 }
 

@@ -1,7 +1,24 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
+import { logout } from '../api';
 
 const Header: React.FC = () => {
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout: handleLogout } = useAuthStore();
+
+  const handleLogoutClick = async () => {
+    try {
+      await logout();
+      handleLogout();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="container mx-auto px-4">
@@ -30,12 +47,37 @@ const Header: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
             </button>
-            <button className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium">
-              高级创作
-            </button>
-            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-              <span className="text-gray-600 font-medium">A</span>
-            </div>
+          
+            {isAuthenticated ? (
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                    <span className="text-white font-medium">{user?.account?.charAt(0)?.toUpperCase() || 'A'}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleLogoutClick}
+                  className="text-sm text-gray-600 hover:text-purple-600 px-3 py-1 border border-gray-300 rounded-md hover:border-purple-600"
+                >
+                  退出
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-3">
+                <Link 
+                  to="/login" 
+                  className="text-sm text-gray-600 hover:text-purple-600 px-3 py-1 border border-gray-300 rounded-md hover:border-purple-600"
+                >
+                  登录
+                </Link>
+                <Link 
+                  to="/register" 
+                  className="text-sm text-white bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded-md"
+                >
+                  注册
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>
