@@ -49,6 +49,7 @@ export default function Register() {
   const [pendingFormData, setPendingFormData] = useState<RegisterFormData | null>(null);
   const [lockoutInfo, setLockoutInfo] = useState<{ blocked: boolean; reason?: string }>({ blocked: false });
   const [captchaKey, setCaptchaKey] = useState(0);
+  const [canvasKey, setCanvasKey] = useState(0);
 
   const checkLockout = useCallback(() => {
     const lockout = verifyManager.isLocked();
@@ -131,6 +132,7 @@ export default function Register() {
 
     if (!isVerified) {
       setPendingFormData(values);
+      setCanvasKey(prev => prev + 1);
       setVerifyVisible(true);
       return;
     }
@@ -274,7 +276,7 @@ export default function Register() {
             ]}
           >
             <Checkbox>
-              我已阅读并同意<a href="/agreement" className="text-purple-600">《用户服务协议》</a>和<a href="/privacy" className="text-purple-600">《隐私政策》</a>
+              我已阅读并同意<a href="/#/agreement" className="text-purple-600">《用户服务协议》</a>和<a href="/#/privacy" className="text-purple-600">《隐私政策》</a>
             </Checkbox>
           </Form.Item>
 
@@ -312,6 +314,7 @@ export default function Register() {
       >
         <div className="pt-2">
           <CanvasVerify
+            key={canvasKey}
             onSuccess={handleVerifySuccess}
             width={320}
             height={180}

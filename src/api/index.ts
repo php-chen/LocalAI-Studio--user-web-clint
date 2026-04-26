@@ -94,6 +94,11 @@ api.interceptors.response.use(
   async error => {
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // 如果是登录请求，直接返回错误，不调用handleRefresh
+      if (originalRequest.url?.includes('/auth/login') && error.response?.data?.message?.message === '账号或密码错误') {
+        return Promise.reject(error);
+      }
+
       const currentTime = Date.now();
 
       if (refreshCount >= MAX_REFRESH_ATTEMPTS) {

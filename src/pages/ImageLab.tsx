@@ -1,48 +1,80 @@
+/**
+ * 图像实验室页面
+ * 功能：用户可以通过文本提示词生成图像，管理创作任务，查看创作历史
+ */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import MainLayout from '../layouts/MainLayout';
 import api from '../api';
-import { message } from 'antd';
+import { message, Modal } from 'antd';
 
-const POINTS_CONSUMED_PER_CREATION = 5;
+// 默认积分消耗值
+const DEFAULT_POINTS_CONSUMED = 5;
+// API基础URL
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
+/**
+ * AI模型接口
+ * 描述：从API获取的AI模型信息
+ */
 interface AIModel {
-  id: number;
-  model_name: string;
-  model_type: string;
-  config_info: any;
-  is_deleted: number;
-  created_at: number;
-  updated_at: number;
+  id: number;              // 模型ID
+  model_name: string;      // 模型名称
+  model_type: string;      // 模型类型
+  config_info: any;        // 模型配置信息
+  is_deleted: number;      // 是否删除
+  created_at: number;      // 创建时间
+  updated_at: number;      // 更新时间
+  points?: number;         // 模型消耗积分
+  workflow?: string;       // 工作流名称
 }
 
+/**
+ * 创作任务接口
+ * 描述：用户创建的图像生成任务信息
+ */
 interface CreationTask {
-  creation_id: string;
-  content: string;
-  status: 'QUEUING' | 'CREATING' | 'COMPLETED' | 'CANCELED' | 'INVALID';
-  result_info?: string[];
-  extra_info?: string;
-  created_at?: number;
-  models?: string[];
-  points_consumed?: number;
+  work_id?: string;                   // 作品ID
+  creation_id?: string;               // 旧的创作ID（兼容）
+  content: string;                    // 任务内容（提示词）
+  status: 'QUEUING' | 'CREATING' | 'COMPLETED' | 'CANCELED' | 'INVALID' | 'FAILED';  // 任务状态
+  result_info?: string[];             // 生成结果路径
+  extra_info?: string;                // 额外信息
+  created_at?: number;                // 创建时间
+  models?: (string | number)[];       // 使用的模型ID
+  points_consumed?: number;           // 消耗积分
+  creation_type?: string;             // 创作类型
+  tags?: string[];                    // 作品标签
 }
 
+/**
+ * 图像实验室组件
+ * @returns 图像实验室页面的UI结构
+ */
 const ImageLab: React.FC = () => {
-  const [models, setModels] = useState<AIModel[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-  const [prompt, setPrompt] = useState<string>('');
-  const [balance, setBalance] = useState<number>(0);
-  const [balanceLoading, setBalanceLoading] = useState<boolean>(true);
-  const [tasks, setTasks] = useState<CreationTask[]>([]);
-  const [tasksLoading, setTasksLoading] = useState<boolean>(true);
-  const [selectedTask, setSelectedTask] = useState<CreationTask | null>(null);
-  const [currentCreationId, setCurrentCreationId] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState<boolean>(false);
+  // 状态管理
+  const [models, setModels] = useState<AIModel[]>([]);             // AI模型列表
+  const [loading, setLoading] = useState<boolean>(true);           // 模型加载状态
+  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);  // 选中的模型ID
+  const [selectedModelPoints, setSelectedModelPoints] = useState<number>(DEFAULT_POINTS_CONSUMED);  // 选中模型的积分消耗
+  const [prompt, setPrompt] = useState<string>('');                // 提示词输入
+  const [balance, setBalance] = useState<number>(0);              // 用户积分余额
+  const [balanceLoading, setBalanceLoading] = useState<boolean>(true);  // 积分加载状态
+  const [tasks, setTasks] = useState<CreationTask[]>([]);          // 创作任务列表
+  const [tasksLoading, setTasksLoading] = useState<boolean>(true);  // 任务加载状态
+  const [selectedTask, setSelectedTask] = useState<CreationTask | null>(null);  // 选中的任务
+  const [currentCreationId, setCurrentCreationId] = useState<string | null>(null);  // 当前正在创建的任务ID
+  const [isCreating, setIsCreating] = useState<boolean>(false);     // 创建任务的加载状态
+  const [previewVisible, setPreviewVisible] = useState<boolean>(false);  // 图片预览Modal的可见性
+  const [previewImage, setPreviewImage] = useState<string>('');     // 当前预览的图片URL
 
-  const tasksRef = useRef(tasks);
+  // 引用
+  const tasksRef = useRef(tasks);  // 任务列表的引用，用于在setTimeout中访问最新状态
   tasksRef.current = tasks;
 
+  /**
+   * 获取AI模型列表
+   * 描述：从API获取文本到图像的AI模型列表
+   */
   const fetchModels = useCallback(async () => {
     try {
       setLoading(true);
@@ -54,8 +86,10 @@ const ImageLab: React.FC = () => {
       if (response.data.state === 200) {
         const modelList = response.data.data.list || [];
         setModels(modelList);
+        // 如果有模型且未选择模型，默认选择第一个
         if (modelList.length > 0 && !selectedModelId) {
           setSelectedModelId(modelList[0].id);
+          setSelectedModelPoints(modelList[0].points || DEFAULT_POINTS_CONSUMED);
         }
       } else {
         message.warning('获取模型列表失败: ' + response.data.message);
@@ -67,6 +101,10 @@ const ImageLab: React.FC = () => {
     }
   }, [selectedModelId]);
 
+  /**
+   * 获取用户积分余额
+   * 描述：从API获取用户的积分余额
+   */
   const fetchBalance = useCallback(async () => {
     try {
       setBalanceLoading(true);
@@ -81,6 +119,10 @@ const ImageLab: React.FC = () => {
     }
   }, []);
 
+  /**
+   * 获取创作任务列表
+   * 描述：从API获取用户的创作任务列表
+   */
   const fetchTasks = useCallback(async () => {
     try {
       setTasksLoading(true);
@@ -89,17 +131,19 @@ const ImageLab: React.FC = () => {
         message.error('用户未登录');
         return;
       }
-      const response = await api.post('/creation/list', {
+      const response = await api.post('/work/list', {
         user_uuid: user.uuid,
+        creation_type: 'IMAGE',
         page: 1,
         page_size: 20
       });
       if (response.data.state === 200) {
         const taskList: CreationTask[] = response.data.data.list || [];
         setTasks(taskList);
+        // 如果有任务且未选择任务，默认选择第一个并获取详情
         if (taskList.length > 0 && !selectedTask) {
           setSelectedTask(taskList[0]);
-          fetchWorkDetail(taskList[0].creation_id);
+          fetchWorkDetail(taskList[0].work_id || taskList[0].creation_id);
         }
       }
     } catch (error) {
@@ -109,27 +153,35 @@ const ImageLab: React.FC = () => {
     }
   }, [selectedTask]);
 
-  const fetchWorkDetail = useCallback(async (creationId: string) => {
+  /**
+   * 获取作品详情
+   * 描述：从API获取指定作品的详细信息，包括生成结果
+   * @param workId 作品ID
+   */
+  const fetchWorkDetail = useCallback(async (workId: string) => {
     try {
       const response = await api.post('/work/detail', {
-        work_id: creationId
+        work_id: workId
       });
       if (response.data.state === 200) {
         const workDetail = response.data.data;
+        // 更新任务列表中的任务信息
         setTasks(prevTasks => {
           const updatedTasks = prevTasks.map(task =>
-            task.creation_id === creationId
+            (task.work_id === workId || task.creation_id === workId)
               ? { ...task, ...workDetail }
               : task
           );
           return updatedTasks;
         });
+        // 更新选中的任务信息
         setSelectedTask(prev => {
-          if (prev?.creation_id === creationId) {
+          if (prev?.work_id === workId || prev?.creation_id === workId) {
             return { ...prev, ...workDetail };
           }
           return prev;
         });
+        // 如果作品已完成，停止轮询
         if (workDetail.status === 'COMPLETED') {
           setCurrentCreationId(null);
         }
@@ -139,66 +191,85 @@ const ImageLab: React.FC = () => {
     }
   }, []);
 
+  /**
+   * 初始加载数据
+   * 描述：组件挂载时加载模型列表、用户积分和任务列表
+   */
   useEffect(() => {
     fetchModels();
     fetchBalance();
     fetchTasks();
   }, []);
 
+  /**
+   * 轮询作品状态
+   * 描述：当有正在创建的作品时，每5秒轮询一次作品状态
+   */
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (currentCreationId) {
+      // 立即查询一次
       fetchWorkDetail(currentCreationId);
+      // 每5秒查询一次
       interval = setInterval(() => {
         fetchWorkDetail(currentCreationId);
       }, 5000);
     }
+    // 清理函数
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [currentCreationId, fetchWorkDetail]);
 
+  /**
+   * 创建作品
+   * 描述：根据用户输入的提示词和选择的模型创建图像生成任务
+   */
   const handleCreateWork = async () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // 验证用户登录状态
     if (!user.uuid) {
       message.error('请先登录');
       return;
     }
+    // 验证提示词
     if (!prompt.trim()) {
       message.warning('请输入提示词');
       return;
     }
+    // 验证模型选择
     if (!selectedModelId) {
       message.warning('请选择一个模型');
       return;
     }
-    if (balance < POINTS_CONSUMED_PER_CREATION) {
+    // 验证积分
+    if (balance < selectedModelPoints) {
       message.error('积分不足，无法创建作品');
       return;
     }
 
     try {
       setIsCreating(true);
-      const response = await api.post('/creation/create', {
-        user_uuid: user.uuid,
-        points_consumed: POINTS_CONSUMED_PER_CREATION,
-        models: [selectedModelId.toString()],
+      const response = await api.post('/work/create', {
+        points_consumed: selectedModelPoints,
+        models: [selectedModelId],
         content: prompt,
-        creation_type: 'IMAGE',
-        status: 'QUEUING'
+        creation_type: 'IMAGE'
       });
 
       if (response.data.state === 200) {
         message.success('作品创建成功');
-        const newCreationId = response.data.data.creation_id;
-        setCurrentCreationId(newCreationId);
+        const newWorkId = response.data.data.work_id;
+        setCurrentCreationId(newWorkId);
         setPrompt('');
 
+        // 更新积分和任务列表
         await fetchBalance();
         await fetchTasks();
 
+        // 延迟选择新创建的任务
         setTimeout(() => {
-          const newTask = tasksRef.current.find(t => t.creation_id === newCreationId);
+          const newTask = tasksRef.current.find(t => t.work_id === newWorkId || t.creation_id === newWorkId);
           if (newTask) {
             setSelectedTask(newTask);
           }
@@ -213,27 +284,50 @@ const ImageLab: React.FC = () => {
     }
   };
 
+  /**
+   * 选择任务
+   * 描述：选择一个任务并获取其详细信息
+   * @param task 要选择的任务
+   */
   const handleTaskSelect = async (task: CreationTask) => {
     setSelectedTask(task);
-    await fetchWorkDetail(task.creation_id);
-    if (task.status !== 'COMPLETED' && task.status !== 'CANCELED' && task.status !== 'INVALID') {
-      if (!currentCreationId || currentCreationId !== task.creation_id) {
-        setCurrentCreationId(task.creation_id);
+    // 获取任务详情
+    const taskId = task.work_id || task.creation_id;
+    if (taskId) {
+      await fetchWorkDetail(taskId);
+      // 如果任务未完成，开始轮询状态
+      if (task.status !== 'COMPLETED' && task.status !== 'CANCELED' && task.status !== 'INVALID' && task.status !== 'FAILED') {
+        if (!currentCreationId || currentCreationId !== taskId) {
+          setCurrentCreationId(taskId);
+        }
       }
     }
   };
 
+  /**
+   * 获取状态配置
+   * 描述：根据任务状态获取对应的显示配置
+   * @param status 任务状态
+   * @returns 状态配置对象
+   */
   const getStatusConfig = (status: string) => {
     const configMap: Record<string, { label: string; color: string; progress: string }> = {
       QUEUING: { label: '排队中', color: 'text-amber-600', progress: 'bg-amber-500' },
       CREATING: { label: '创作中', color: 'text-blue-600', progress: 'bg-blue-500' },
       COMPLETED: { label: '已完成', color: 'text-green-600', progress: 'bg-green-500' },
       CANCELED: { label: '已取消', color: 'text-red-600', progress: 'bg-red-500' },
-      INVALID: { label: '无效', color: 'text-red-600', progress: 'bg-red-500' }
+      INVALID: { label: '无效', color: 'text-red-600', progress: 'bg-red-500' },
+      FAILED: { label: '失败', color: 'text-red-600', progress: 'bg-red-500' }
     };
     return configMap[status] || { label: '未知', color: 'text-gray-600', progress: 'bg-gray-400' };
   };
 
+  /**
+   * 格式化时间
+   * 描述：将时间戳格式化为可读的时间字符串
+   * @param timestamp 时间戳（毫秒）
+   * @returns 格式化后的时间字符串
+   */
   const formatTime = (timestamp: number) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
@@ -245,19 +339,62 @@ const ImageLab: React.FC = () => {
     });
   };
 
-  const getModelName = (modelId: string | undefined) => {
+  /**
+   * 获取模型名称
+   * 描述：根据模型ID获取模型名称
+   * @param modelId 模型ID
+   * @returns 模型名称
+   */
+  const getModelName = (modelId: string | number | undefined) => {
     if (!modelId) return '未选择';
-    const model = models.find(m => m.id.toString() === modelId || m.id === parseInt(modelId));
+    const model = models.find(m => m.id === (typeof modelId === 'string' ? parseInt(modelId) : modelId));
     return model?.model_name || '未知模型';
+  };
+
+  /**
+   * 处理图片点击
+   * 描述：点击图片时打开预览Modal
+   * @param imgPath 图片路径
+   */
+  const handleImageClick = (imgPath: string) => {
+    setPreviewImage(`${API_BASE_URL}${imgPath}`);
+    setPreviewVisible(true);
+  };
+
+  /**
+   * 处理图片下载
+   * 描述：下载图片到本地
+   * @param imgPath 图片路径
+   */
+  const handleImageDownload = async (imgPath: string) => {
+    try {
+      const imageUrl = `${API_BASE_URL}${imgPath}`;
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `image_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      message.success('图片下载成功');
+    } catch (error) {
+      message.error('图片下载失败');
+      console.error('图片下载失败:', error);
+    }
   };
 
   return (
     <MainLayout>
       <main className="container mx-auto px-4 py-8">
         <div className="flex space-x-6">
+          {/* 左侧创作参数面板 */}
           <div className="w-80 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex-shrink-0">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">创作参数</h2>
 
+            {/* AI模型选择 */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">AI 模型</label>
               {loading ? (
@@ -271,19 +408,27 @@ const ImageLab: React.FC = () => {
                   {models.map(model => (
                     <div
                       key={model.id}
-                      onClick={() => setSelectedModelId(model.id)}
+                      onClick={() => {
+                        setSelectedModelId(model.id);
+                        setSelectedModelPoints(model.points || DEFAULT_POINTS_CONSUMED);
+                      }}
                       className={`p-3 rounded-lg border cursor-pointer transition-all ${
                         selectedModelId === model.id
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-purple-300'
                       }`}
                     >
-                      <div className="flex items-center">
-                        <div className={`w-4 h-4 rounded-full mr-3 flex-shrink-0 ${
-                          selectedModelId === model.id ? 'bg-purple-500' : 'bg-gray-300'
-                        }`} />
-                        <span className="text-sm font-medium text-gray-900 truncate">
-                          {model.model_name}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className={`w-4 h-4 rounded-full mr-3 flex-shrink-0 ${
+                            selectedModelId === model.id ? 'bg-purple-500' : 'bg-gray-300'
+                          }`} />
+                          <span className="text-sm font-medium text-gray-900 truncate">
+                            {model.model_name}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {model.points || DEFAULT_POINTS_CONSUMED} 积分
                         </span>
                       </div>
                     </div>
@@ -296,6 +441,7 @@ const ImageLab: React.FC = () => {
               )}
             </div>
 
+            {/* 提示词输入 */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 提示词 (Prompt)
@@ -313,10 +459,11 @@ const ImageLab: React.FC = () => {
               </div>
             </div>
 
+            {/* 积分信息 */}
             <div className="mb-4 p-3 bg-gray-50 rounded-lg">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">消耗积分</span>
-                <span className="font-medium text-purple-600">{POINTS_CONSUMED_PER_CREATION} 积分</span>
+                <span className="font-medium text-purple-600">{selectedModelPoints} 积分</span>
               </div>
               <div className="flex justify-between text-sm mt-1">
                 <span className="text-gray-600">剩余积分</span>
@@ -324,11 +471,12 @@ const ImageLab: React.FC = () => {
               </div>
             </div>
 
+            {/* 创建按钮 */}
             <button
               onClick={handleCreateWork}
-              disabled={isCreating || balance < POINTS_CONSUMED_PER_CREATION}
+              disabled={isCreating || balance < selectedModelPoints}
               className={`w-full py-3 rounded-lg font-medium transition-all ${
-                isCreating || balance < POINTS_CONSUMED_PER_CREATION
+                isCreating || balance < selectedModelPoints
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-purple-600 text-white hover:bg-purple-700'
               }`}
@@ -346,11 +494,13 @@ const ImageLab: React.FC = () => {
               )}
             </button>
 
-            {balance < POINTS_CONSUMED_PER_CREATION && (
+            {/* 积分不足提示 */}
+            {balance < selectedModelPoints && (
               <p className="mt-2 text-xs text-red-500 text-center">积分不足，请先充值</p>
             )}
           </div>
 
+          {/* 中间作品预览面板 */}
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 p-6 min-h-[600px]">
             {selectedTask ? (
               <div className="h-full flex flex-col">
@@ -362,6 +512,7 @@ const ImageLab: React.FC = () => {
                   </span>
                 </div>
 
+                {/* 任务信息 */}
                 <div className="bg-gray-50 rounded-lg p-4 mb-4">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -383,13 +534,15 @@ const ImageLab: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 进度条 */}
                 <div className="mb-4">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-500">进度</span>
                     <span className="text-gray-700">
                       {selectedTask.status === 'COMPLETED' ? '100%' : 
                        selectedTask.status === 'CREATING' ? '50%' : 
-                       selectedTask.status === 'QUEUING' ? '10%' : '0%'}
+                       selectedTask.status === 'QUEUING' ? '10%' : 
+                       selectedTask.status === 'FAILED' ? '0%' : '0%'}
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
@@ -404,20 +557,33 @@ const ImageLab: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 生成结果 */}
                 <div className="flex-1">
                   <span className="text-sm text-gray-500 mb-2 block">生成结果</span>
                   {selectedTask.status === 'COMPLETED' && selectedTask.result_info && selectedTask.result_info.length > 0 ? (
                     <div className="grid grid-cols-2 gap-4">
                       {selectedTask.result_info.map((imgPath, index) => (
                         <div key={index} className="border border-gray-200 rounded-lg overflow-hidden bg-gray-100">
-                          <img
-                            src={`${API_BASE_URL}${imgPath}`}
-                            alt={`作品 ${index + 1}`}
-                            className="w-full h-48 object-cover"
-                            onError={e => {
-                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" class="w-full h-48" fill="%23e5e7eb"%3E%3Crect width="100%25" height="100%25"/%3E%3C/svg%3E';
-                            }}
-                          />
+                          <div className="relative">
+                            <img
+                              src={`${API_BASE_URL}${imgPath}`}
+                              alt={`作品 ${index + 1}`}
+                              className="w-full h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => handleImageClick(imgPath)}
+                              onError={e => {
+                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" class="w-full h-48" fill="%23e5e7eb"%3E%3Crect width="100%25" height="100%25"/%3E%3C/svg%3E';
+                              }}
+                            />
+                            <button
+                              onClick={() => handleImageDownload(imgPath)}
+                              className="absolute bottom-2 right-2 bg-white/80 hover:bg-white p-2 rounded-full shadow-md transition-all"
+                              title="下载图片"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -444,6 +610,15 @@ const ImageLab: React.FC = () => {
                         <p className="text-gray-500">任务排队中，请耐心等待...</p>
                       </div>
                     </div>
+                  ) : selectedTask.status === 'FAILED' ? (
+                    <div className="h-48 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <div className="text-center">
+                        <svg className="h-8 w-8 text-red-500 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        <p className="text-gray-500">任务失败</p>
+                      </div>
+                    </div>
                   ) : (
                     <div className="h-48 bg-gray-100 rounded-lg flex items-center justify-center">
                       <p className="text-gray-500">任务已{selectedTask.status === 'CANCELED' ? '取消' : '失效'}</p>
@@ -451,6 +626,7 @@ const ImageLab: React.FC = () => {
                   )}
                 </div>
 
+                {/* 额外信息 */}
                 {selectedTask.extra_info && (
                   <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <span className="text-sm text-yellow-800">{selectedTask.extra_info}</span>
@@ -470,7 +646,9 @@ const ImageLab: React.FC = () => {
             )}
           </div>
 
+          {/* 右侧创作历史和账户余额面板 */}
           <div className="w-80 flex-shrink-0">
+            {/* 创作历史 */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <svg className="w-5 h-5 text-purple-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -494,10 +672,10 @@ const ImageLab: React.FC = () => {
                     const statusConfig = getStatusConfig(task.status);
                     return (
                       <div
-                        key={task.creation_id}
+                        key={task.work_id || task.creation_id}
                         onClick={() => handleTaskSelect(task)}
                         className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedTask?.creation_id === task.creation_id
+                          (selectedTask?.work_id === task.work_id || selectedTask?.creation_id === task.creation_id)
                             ? 'border-purple-500 bg-purple-50'
                             : 'border-gray-200 hover:border-purple-300'
                         }`}
@@ -536,6 +714,7 @@ const ImageLab: React.FC = () => {
               )}
             </div>
 
+            {/* 账户余额 */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-3">账户余额</h3>
               {balanceLoading ? (
@@ -547,12 +726,38 @@ const ImageLab: React.FC = () => {
                 </div>
               )}
               <div className="mt-3 text-xs text-gray-500 text-center">
-                每次创作消耗 {POINTS_CONSUMED_PER_CREATION} 积分
+                每次创作消耗 {selectedModelPoints} 积分
               </div>
             </div>
           </div>
         </div>
       </main>
+
+      {/* 图片预览Modal */}
+      <Modal
+        open={previewVisible}
+        onCancel={() => setPreviewVisible(false)}
+        footer={null}
+        width={800}
+        centered
+      >
+        <div className="relative">
+          <img
+            src={previewImage}
+            alt="预览图片"
+            className="w-full h-auto max-h-[80vh] object-contain"
+          />
+          <button
+            onClick={() => handleImageDownload(previewImage.replace(API_BASE_URL, ''))}
+            className="absolute top-4 right-4 bg-white/80 hover:bg-white p-2 rounded-full shadow-md transition-all"
+            title="下载图片"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </button>
+        </div>
+      </Modal>
     </MainLayout>
   );
 };

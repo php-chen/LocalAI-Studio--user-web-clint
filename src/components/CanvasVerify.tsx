@@ -5,6 +5,7 @@ interface CanvasVerifyProps {
   onFail?: () => void;
   width?: number;
   height?: number;
+  visible?: boolean;
 }
 
 interface Target {
@@ -19,7 +20,8 @@ const CanvasVerify: React.FC<CanvasVerifyProps> = ({
   onSuccess,
   onFail,
   width = 320,
-  height = 180
+  height = 180,
+  visible = true
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -256,6 +258,12 @@ const CanvasVerify: React.FC<CanvasVerifyProps> = ({
       setTargets(newTargets);
     }
   }, [captchaKey, generateTargets]);
+
+  useEffect(() => {
+    if (visible) {
+      handleRefresh();
+    }
+  }, [visible, handleRefresh]);
 
   return (
     <div className="bg-white rounded-xl p-5 shadow-2xl select-none">

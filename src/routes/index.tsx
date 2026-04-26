@@ -9,6 +9,8 @@ import Works from '../pages/Works';
 import Materials from '../pages/Materials';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
+import Agreement from '../pages/Agreement';
+import Privacy from '../pages/Privacy';
 
 /**
  * 路由项数据类型
@@ -59,5 +61,15 @@ export const routes: RouteItem[] = [
     path: '/materials',
     element: <Materials />,
     meta: { title: '素材库' }
+  },
+  {
+    path: '/agreement',
+    element: <Agreement />,
+    meta: { title: '用户服务协议' }
+  },
+  {
+    path: '/privacy',
+    element: <Privacy />,
+    meta: { title: '隐私政策' }
   }
 ];

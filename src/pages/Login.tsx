@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Card, message } from 'antd';
+import { Form, Input, Button, Card, message, Modal } from 'antd';
+import CanvasVerify from '../components/CanvasVerify';
 import { login } from '../api';
 import { useAuthStore } from '../store/authStore';
 import { getPublicKey } from '../api';
 import { passwordEncryptor } from '../utils/passwordEncryptor';
+import { verifyManager } from '../store/verifyStore';
 
 const UserIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -28,11 +30,43 @@ export default function Login() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const [verifyVisible, setVerifyVisible] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<LoginFormData | null>(null);
+  const [lockoutInfo, setLockoutInfo] = useState<{ blocked: boolean; reason?: string }>({ blocked: false });
+  const [canvasKey, setCanvasKey] = useState(0);
 
 
 
-  const onFinish = async (values: LoginFormData) => {
+  const checkLockout = useCallback(() => {
+    const lockout = verifyManager.isLocked();
+    if (lockout) {
+      const remaining = Math.ceil(verifyManager.getRemainingLockoutTime() / 1000);
+      setLockoutInfo({
+        blocked: true,
+        reason: `登录已锁定，请在 ${remaining} 秒后重试`
+      });
+      return true;
+    }
+    setLockoutInfo({ blocked: false });
+    return false;
+  }, []);
+
+  const submitLogin = useCallback(async (values: LoginFormData) => {
+    if (checkLockout()) {
+      return;
+    }
+
     setLoading(true);
+
+    const result = verifyManager.recordAttempt(true, values.account);
+
+    if (result.blocked) {
+      message.error(result.reason);
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await getPublicKey();
       if(res.state !== 200) {
@@ -56,9 +90,12 @@ export default function Login() {
           navigate('/');
         }, 1000);
       } else {
+        verifyManager.recordAttempt(false, values.account);
         message.error(response.message || '登录失败，请稍后重试');
+        setIsVerified(false);
       }
     } catch (error: any) {
+      verifyManager.recordAttempt(false, values.account);
       if (error.response?.status === 401) {
         message.error('账号或密码错误');
       } else if (error.response?.data?.message) {
@@ -68,10 +105,42 @@ export default function Login() {
       } else {
         message.error('登录失败，请稍后重试');
       }
+      setIsVerified(false);
     } finally {
       setLoading(false);
     }
-  };
+  }, [checkLockout, navigate, setAuth]);
+
+  const handleVerifySuccess = useCallback(() => {
+    setIsVerified(true);
+    setVerifyVisible(false);
+  }, []);
+
+  const handleModalAfterClose = useCallback(() => {
+    if (isVerified && pendingFormData) {
+      submitLogin(pendingFormData);
+    }
+    setPendingFormData(null);
+  }, [isVerified, pendingFormData, submitLogin]);
+
+  const handleVerifyClose = useCallback(() => {
+    setVerifyVisible(false);
+  }, []);
+
+  const onFinish = useCallback((values: LoginFormData) => {
+    if (checkLockout()) {
+      return;
+    }
+
+    if (!isVerified) {
+      setPendingFormData(values);
+      setCanvasKey(prev => prev + 1);
+      setVerifyVisible(true);
+      return;
+    }
+
+    submitLogin(values);
+  }, [isVerified, checkLockout, submitLogin]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-600 py-12 px-4 sm:px-6 lg:px-8">
@@ -83,6 +152,17 @@ export default function Login() {
           <h2 className="text-3xl font-bold text-gray-900">欢迎回来</h2>
           <p className="text-gray-600 mt-2">登录您的账号继续创作</p>
         </div>
+
+        {lockoutInfo.blocked && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+              <span className="text-red-700 text-sm">{lockoutInfo.reason}</span>
+            </div>
+          </div>
+        )}
 
         <Form
           form={form}
@@ -146,6 +226,25 @@ export default function Login() {
           </div>
         </Form>
       </Card>
+
+      <Modal
+        open={verifyVisible}
+        onCancel={handleVerifyClose}
+        footer={null}
+        closable={true}
+        centered
+        width={380}
+        afterClose={handleModalAfterClose}
+      >
+        <div className="pt-2">
+          <CanvasVerify
+            key={canvasKey}
+            onSuccess={handleVerifySuccess}
+            width={320}
+            height={180}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
