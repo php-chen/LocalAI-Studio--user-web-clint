@@ -56,7 +56,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/LocalAI-Studio-User-Client.git
+git clone https://github.com/php-chen/LocalAI-Studio-User-Client.git
 cd LocalAI-Studio-User-Client
 
 # 安装依赖
@@ -165,7 +165,7 @@ src/
 
 ## 👨‍💻 作者
 
-**您的名字** - [GitHub](https://github.com/your-username)
+**php-chen** - [GitHub](https://github.com/php-chen)
 
 ---
 

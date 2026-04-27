@@ -56,7 +56,7 @@
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/your-username/LocalAI-Studio-User-Client.git
+git clone https://github.com/php-chen/LocalAI-Studio-User-Client.git
 cd LocalAI-Studio-User-Client
 
 # 依存関係をインストール
@@ -165,7 +165,7 @@ src/
 
 ## 👨‍💻 著者
 
-**Your Name** - [GitHub](https://github.com/your-username)
+**php-chen** - [GitHub](https://github.com/php-chen)
 
 ---
 

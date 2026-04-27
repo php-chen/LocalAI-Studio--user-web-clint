@@ -56,7 +56,7 @@
 
 ```bash
 # 리포지토리 클론
-git clone https://github.com/your-username/LocalAI-Studio-User-Client.git
+git clone https://github.com/php-chen/LocalAI-Studio-User-Client.git
 cd LocalAI-Studio-User-Client
 
 # 의존성 설치
@@ -165,7 +165,7 @@ src/
 
 ## 👨‍💻 작성자
 
-**Your Name** - [GitHub](https://github.com/your-username)
+**php-chen** - [GitHub](https://github.com/php-chen)
 
 ---
 

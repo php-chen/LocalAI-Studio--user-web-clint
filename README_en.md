@@ -56,7 +56,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/LocalAI-Studio-User-Client.git
+git clone https://github.com/php-chen/LocalAI-Studio-User-Client.git
 cd LocalAI-Studio-User-Client
 
 # Install dependencies
@@ -165,7 +165,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-**Your Name** - [GitHub](https://github.com/your-username)
+**php-chen** - [GitHub](https://github.com/php-chen)
 
 ---
 
