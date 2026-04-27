@@ -6,14 +6,14 @@
 
 ---
 
-## 🌐 Language / 语言 / 言語 / 언어
+## 🌐 Language Switch
 
 | Language | Link |
 |----------|------|
-| 🇨🇳 简体中文 | [README_zh.md](README_zh.md) |
-| 🇺🇸 English | [README_en.md](README_en.md) |
-| 🇯🇵 日本語 | [README_ja.md](README_ja.md) |
-| 🇰🇷 한국어 | [README_ko.md](README_ko.md) |
+| 🇨🇳 简体中文 | [简体中文](README_zh.md) |
+| 🇺🇸 English | [This Document](README_en.md) |
+| 🇯🇵 日本語 | [日本語](README_ja.md) |
+| 🇰🇷 한국어 | [한국어](README_ko.md) |
 
 ---
 
