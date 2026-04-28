@@ -8,7 +8,12 @@ import api from '../api';
 import { message, Modal, Spin, Select, Input } from 'antd';
 
 // API基础URL
-const API_BASE_URL = 'http://127.0.0.1:5000';
+const isProduction = import.meta.env.PROD;
+
+const PROD_API_URL = 'http://103.236.97.248:60490';
+const DEV_API_URL = '/api';
+
+const API_BASE_URL = isProduction ? PROD_API_URL : DEV_API_URL;
 
 // 作品类型
 type CreationType = 'TEXT' | 'VIDEO' | 'IMAGE' | 'COPYWRITING' | 'OTHER';

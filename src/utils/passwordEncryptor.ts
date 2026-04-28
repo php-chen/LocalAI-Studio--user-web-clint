@@ -1,4 +1,4 @@
-
+import forge from 'node-forge';
 
 export interface PasswordEncryptionResult {
   encryptedPassword: string;
@@ -8,110 +8,87 @@ export interface PasswordEncryptionResult {
 class PasswordEncryptor {
   private publicKey: string | null = null;
 
-  private get crypto(): SubtleCrypto {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      return window.crypto.subtle;
-    } else if (typeof crypto !== 'undefined' && crypto.subtle) {
-      return crypto.subtle;
-    } else if (typeof globalThis !== 'undefined' && (globalThis as any).crypto && (globalThis as any).crypto.subtle) {
-      return (globalThis as any).crypto.subtle;
-    }
-    throw new Error('Web Crypto API not available in this environment');
-  }
 
-  setPublicKey(publicKey: string): void {
-    this.publicKey = publicKey;
-  }
 
   private parsePublicKey(pemKey: string): string {
     let keyStr = String(pemKey || '');
 
-    // 检查是否包含 PEM 标识，如果不包含，可能是 Base64 编码的完整 PEM
-    if (!keyStr.includes('-----BEGIN PUBLIC KEY-----')) {
-      try {
-        // 尝试 Base64 解码
-        const decodedPem = atob(keyStr);
-        // 检查解码后的字符串是否包含 PEM 标识
-        if (decodedPem.includes('-----BEGIN PUBLIC KEY-----')) {
-          keyStr = decodedPem;
-        }
-      } catch (e) {
-        // 解码失败，直接使用原始字符串
-      }
+    // 第一步：保留原始换行，先检查是否已经是完整 PEM
+    if (keyStr.includes('-----BEGIN PUBLIC KEY-----')) {
+      // 已经是完整 PEM，规范化一下
+      return keyStr.replace(/\r/g, '').trim();
     }
 
-    const pemContents = keyStr
-      .replace(/-----BEGIN PUBLIC KEY-----/, '')
-      .replace(/-----END PUBLIC KEY-----/, '')
-      .replace(/\s/g, '');
+    // 第二步：尝试直接使用原始内容，可能是多行 Base64 公钥
+    // 移除可能存在的换行，然后添加 PEM 包装
+    const cleanKey = keyStr
+      .replace(/\r/g, '')
+      .replace(/\n/g, '')
+      .replace(/\s+/g, '');
 
-    return pemContents;
+    const formattedPem = '-----BEGIN PUBLIC KEY-----\n' + cleanKey + '\n-----END PUBLIC KEY-----';
+
+    console.log('Formatted PEM:', formattedPem);
+
+    return formattedPem;
   }
 
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  private base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  private async rsaEncryptPassword(password: string): Promise<string> {
+  private rsaEncryptPassword(password: string): string {
     if (!this.publicKey) {
       throw new Error('Public key not set');
     }
 
-
-
     const parsedKey = this.parsePublicKey(this.publicKey);
 
-    const publicKeyDER = this.base64ToArrayBuffer(parsedKey);
-
     try {
+      console.log('原始公钥:', this.publicKey?.substring(0, 100) + '...');
+      console.log('解析后公钥:', parsedKey);
       console.log('开始导入公钥');
-      const publicKey = await this.crypto.importKey(
-        'spki',
-        publicKeyDER,
-        {
-          name: 'RSA-OAEP',
-          hash: { name: 'SHA-256' }
-        },
-        false,
-        ['encrypt']
-      );
 
-      const passwordBytes = new TextEncoder().encode(password);
+      let publicKey;
+      try {
+        // 方法1: 标准 PEM 解析
+        publicKey = forge.pki.publicKeyFromPem(parsedKey);
+      } catch (parseError) {
+        console.log('标准 PEM 解析失败，尝试备用方法...');
+        // 方法2: 尝试直接提取裸 Base64 部分并解析
+        const body = parsedKey
+          .replace(/-----BEGIN PUBLIC KEY-----/g, '')
+          .replace(/-----END PUBLIC KEY-----/g, '')
+          .replace(/\s+/g, '');
+
+        // 从 Base64 解码 DER
+        const der = forge.util.decode64(body);
+        const asn1 = forge.asn1.fromDer(der);
+        publicKey = forge.pki.publicKeyFromAsn1(asn1);
+      }
 
       // 检查密码长度是否超过RSA-OAEP的最大长度
       // 对于2048位RSA密钥，最大明文长度是190字节
-      if (passwordBytes.length > 190) {
+      if (password.length > 190) {
         throw new Error('Password too long for RSA-OAEP encryption');
       }
 
-      const encrypted = await this.crypto.encrypt(
+      // 使用 RSA-OAEP + SHA-256 加密
+      const encrypted = publicKey.encrypt(
+        password,
+        'RSA-OAEP',
         {
-          name: 'RSA-OAEP',
-          hash: { name: 'SHA-256' }
-        },
-        publicKey,
-        passwordBytes
+          md: forge.md.sha256.create(),
+          mgf1: {
+            md: forge.md.sha256.create()
+          }
+        }
       );
 
-      const result = this.arrayBufferToBase64(encrypted);
+      // 转换为 Base64
+      const result = forge.util.encode64(encrypted);
+      console.log('加密成功');
       return result;
-    } catch (error) {
+    } catch (error: any) {
       console.error('RSA encryption error:', error);
       console.error('Error details:', error.message);
+      console.error('解析后的公钥:', parsedKey);
       throw error;
     }
   }
@@ -127,7 +104,7 @@ class PasswordEncryptor {
       };
     }
 
-    const encryptedPassword = await this.rsaEncryptPassword(password);
+    const encryptedPassword = this.rsaEncryptPassword(password);
 
     return {
       encryptedPassword: encryptedPassword,
@@ -146,7 +123,7 @@ class PasswordEncryptor {
       };
     }
 
-    const encryptedPassword = await this.rsaEncryptPassword(password);
+    const encryptedPassword = this.rsaEncryptPassword(password);
 
     return {
       password: encryptedPassword,

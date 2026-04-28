@@ -10,7 +10,12 @@ import { message, Modal } from 'antd';
 // 默认积分消耗值
 const DEFAULT_POINTS_CONSUMED = 5;
 // API基础URL
-const API_BASE_URL = 'http://127.0.0.1:5000';
+const isProduction = import.meta.env.PROD;
+
+const PROD_API_URL = 'http://103.236.97.248:60490';
+const DEV_API_URL = '/api';
+
+const API_BASE_URL = isProduction ? PROD_API_URL : DEV_API_URL;
 
 /**
  * AI模型接口

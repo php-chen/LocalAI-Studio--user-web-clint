@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = '/api';
+const isProduction = import.meta.env.PROD;
+const PROD_API_URL = 'http://103.236.97.248:60490';
+const DEV_API_URL = '/api';
+
+const API_BASE_URL = isProduction ? PROD_API_URL : DEV_API_URL;
 
 const sanitizeInput = (input: string): string => {
   if (!input) return '';
